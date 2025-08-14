@@ -5,6 +5,10 @@ jobs:
       - image: cimg/base:stable
     steps:
       - checkout
+      - run:
+          name: Install rsync on CircleCI
+          command: |
+            sudo apt update && sudo apt install -y rsync
 
       - run:
           name: Prepare SSH key
