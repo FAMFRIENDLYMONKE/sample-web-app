@@ -1,58 +1,66 @@
 version: 2.1
 
-executors:
-  docker-executor:
+jobs:
+  deploy:
     docker:
       - image: cimg/base:stable
-
-jobs:
-  build_and_push:
-    executor: docker-executor
     steps:
       - checkout
 
       - run:
-          name: Install AWS CLI & Docker
+          name: Prepare SSH key
           command: |
-            sudo apt-get update 
-            sudo apt-get install -y awscli curl 
-            curl -fsSL https://get.docker.com | sh
+            mkdir -p ~/.ssh
+            echo -e "Host *\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
 
       - run:
-          name: Login to AWS ECR
+          name: Copy K8s manifests to EC2
           command: |
-            aws ecr get-login-password --region $AWS_REGION \
-              | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+            rsync -avz k8s/ ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/k8s/
 
       - run:
-          name: Build & Push Docker Image
+          name: Deploy on EC2 via SSH
           command: |
-            docker build -t $ECR_REPO .
-            docker tag $ECR_REPO:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
-            docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
+            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' \<<'EOF'
+            set -euo pipefail
 
-  deploy_to_ec2:
-    machine:
-      image: ubuntu-2004:current
-    steps:
-      - add_ssh_keys:
-          fingerprints:
-            - "<YOUR_SSH_KEY_FINGERPRINT>"
-      - run:
-          name: Deploy to EC2
-          command: |
-            ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST "
-              docker pull $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest &&
-              docker stop myapp || true &&
-              docker rm myapp || true &&
-              docker run -d --name myapp -p 80:80 $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
-            "
+            if ! command -v aws >/dev/null 2>&1; then
+              sudo yum update -y
+              sudo yum install -y awscli
+            fi
+
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo amazon-linux-extras enable docker
+              sudo yum install -y docker
+              sudo service docker start
+              sudo systemctl enable docker
+              sudo usermod -aG docker ${USER}
+            fi
+
+            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+            token=$(aws ecr get-login-password --region "${AWS_REGION}")
+            aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${docker_server}"
+
+            NAMESPACE=default
+            SECRET_NAME=regcred
+            kubectl -n "${NAMESPACE}" delete secret "${SECRET_NAME}" --ignore-not-found
+            kubectl -n "${NAMESPACE}" create secret docker-registry "${SECRET_NAME}" \
+              --docker-server="${docker_server}" \
+              --docker-username=AWS \
+              --docker-password="${token}"
+
+            sed -i "s#${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:<USE_CIRCLE_SHA1>#${docker_server}/${ECR_REPO}:${CIRCLE_SHA1}#g" /home/${USER}/k8s/deployment.yaml
+
+            kubectl apply -f /home/${USER}/k8s/deployment.yaml
+            kubectl apply -f /home/${USER}/k8s/service.yaml
+
+            kubectl rollout status deploy/webapp --timeout=120s
+            EOF
 
 workflows:
-  version: 2
-  build_and_deploy:
+  deploy_on_main:
     jobs:
-      - build_and_push
-      - deploy_to_ec2:
-          requires:
-            - build_and_push
+      - deploy:
+          filters:
+            branches:
+              only: main
