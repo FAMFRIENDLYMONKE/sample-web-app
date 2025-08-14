@@ -26,19 +26,24 @@ jobs:
       - run:
           name: Deploy on EC2 via SSH
           command: |
-            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' \<<'EOF'
+            ssh -o StrictHostKeyChecking=no \
+              ${EC2_USER}@${EC2_HOST} \
+              "AWS_ACCOUNT_ID='${AWS_ACCOUNT_ID}' \
+               AWS_REGION='${AWS_REGION}' \
+               ECR_REPO='${ECR_REPO}' \
+               CIRCLE_SHA1='${CIRCLE_SHA1}' \
+               NAMESPACE='${NAMESPACE:-default}' \
+               SECRET_NAME='${SECRET_NAME:-regcred}' \
+               bash -s" \<<'EOF'
             set -euo pipefail
+
+            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+            IMAGE_TAG="${CIRCLE_SHA1}"
 
             # Ensure AWS CLI is present
             if ! command -v aws >/dev/null 2>&1; then
               sudo yum install -y awscli
             fi
-
-            # Vars from CircleCI env
-            NAMESPACE=default
-            SECRET_NAME=regcred
-            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-            IMAGE_TAG="${CIRCLE_SHA1}"
 
             # 1) Refresh ECR pull secret using EC2 IAM role
             token=$(aws ecr get-login-password --region "${AWS_REGION}")
