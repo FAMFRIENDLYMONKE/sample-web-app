@@ -27,12 +27,13 @@ jobs:
       - run:
           name: Deploy on EC2 via SSH
           command: |
-            ssh ${EC2_USER}@${EC2_HOST} \
-              "AWS_ACCOUNT_ID='${AWS_ACCOUNT_ID}' \
-              AWS_REGION='${AWS_REGION}' \
-              ECR_REPO='${ECR_REPO}' \
-              CIRCLE_SHA1='${CIRCLE_SHA1}' \
-              bash -s" \<<'EOF'
+            ssh \
+              AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}" \
+              AWS_REGION="${AWS_REGION}" \
+              ECR_REPO="${ECR_REPO}" \
+              EC2_USER="${EC2_USER}" \
+              CIRCLE_SHA1="${CIRCLE_SHA1}" \
+              ${EC2_USER}@${EC2_HOST} 'bash -s' \<<'EOF'
             set -euo pipefail
 
             NAMESPACE=default
