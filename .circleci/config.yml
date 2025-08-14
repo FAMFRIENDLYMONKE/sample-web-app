@@ -34,6 +34,7 @@ jobs:
                CIRCLE_SHA1='${CIRCLE_SHA1}' \
                NAMESPACE='${NAMESPACE:-default}' \
                SECRET_NAME='${SECRET_NAME:-regcred}' \
+               EC2_USER='${EC2_USER}' \
                bash -s" \<<'EOF'
             set -euo pipefail
 
