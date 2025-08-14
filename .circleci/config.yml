@@ -36,8 +36,7 @@ jobs:
       - run:
           name: Deploy
           command: |
-            ssh ${EC2_USER}@${EC2_HOST} 'source ~/envfile && bash -s' <<'EOF'
-            # same deployment script as before
+            ssh ${EC2_USER}@${EC2_HOST} 'source ~/envfile && bash -s' \<<'EOF'
             EOF
 
       - run:
