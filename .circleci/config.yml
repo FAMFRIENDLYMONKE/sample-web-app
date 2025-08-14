@@ -20,7 +20,7 @@ jobs:
       - run:
           name: Deploy on EC2 via SSH
           command: |
-            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' <<'EOF'
+            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' \<<'EOF'
             set -euo pipefail
 
             if ! command -v aws >/dev/null 2>&1; then
