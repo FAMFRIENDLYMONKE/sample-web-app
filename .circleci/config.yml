@@ -5,46 +5,40 @@ jobs:
     docker:
       - image: cimg/base:stable
     steps:
-      - checkout
+      # Use the SSH key you’ve already added in CircleCI
+      - add_ssh_keys:
+          fingerprints:
+            - "YOUR_SSH_KEY_FINGERPRINT"
 
       - run:
-          name: Install dependencies
+          name: SSH into EC2 and Deploy
           command: |
-            sudo apt-get update
-            sudo apt-get install -y awscli gettext
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
+            ssh -o StrictHostKeyChecking=no ec2-user@$EC2_PUBLIC_DNS \<< 'EOF'
+              set -euo pipefail
 
-      - run:
-          name: Set environment variables
-          command: |
-            # Ensure all env vars exist
-            : "${AWS_ACCOUNT_ID:?AWS_ACCOUNT_ID not set}"
-            : "${AWS_REGION:?AWS_REGION not set}"
-            : "${ECR_REPO:?ECR_REPO not set}"
-            : "${EC2_USER:?EC2_USER not set}"
-            : "${EC2_HOST:?EC2_HOST not set}"
+              echo "✅ Connected to EC2"
 
-            export ECR_REPO=$(echo "${ECR_REPO}" | tr '[:upper:]' '[:lower:]')
-            export IMAGE_TAG="${CIRCLE_SHA1}"
+              # Install kubectl if missing
+              if ! command -v kubectl &> /dev/null; then
+                echo "Installing kubectl..."
+                curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.29.0/2024-03-27/bin/linux/amd64/kubectl
+                chmod +x kubectl
+                sudo mv kubectl /usr/local/bin/
+              fi
 
-            echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
-            echo "AWS_REGION=$AWS_REGION"
-            echo "ECR_REPO=$ECR_REPO"
-            echo "IMAGE_TAG=$IMAGE_TAG"
+              # Update kubeconfig using EC2 IAM role
+              aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
-      - run:
-          name: Authenticate with AWS ECR
-          command: |
-            aws ecr get-login-password --region "$AWS_REGION" \
-              | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+              # (Optional) Pull latest image from ECR
+              echo "Logging into ECR..."
+              aws ecr get-login-password --region "$AWS_REGION" | \
+                docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
-      - run:
-          name: Deploy to Kubernetes
-          command: |
-            envsubst < k8s/deployment.yaml | kubectl apply -f -
-            kubectl rollout status deployment/webapp --timeout=300s
+              # Apply deployment
+              echo "Deploying application..."
+              kubectl apply -f /path/to/deployment.yaml
+              kubectl rollout status deployment/webapp
+            EOF
 
 workflows:
   deploy-workflow:
