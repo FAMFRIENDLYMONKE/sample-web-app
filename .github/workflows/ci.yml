@@ -15,23 +15,23 @@ jobs:
       - name: Configure AWS creds (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::<AWS_ACCOUNT_ID>:role/<GITHUB_OIDC_ROLE>
-          aws-region: <AWS_REGION>
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build image
         run: |
-          IMAGE=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:${GITHUB_SHA}
+          IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO }}:${GITHUB_SHA}
           docker build -t $IMAGE .
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Push image
         run: docker push $IMAGE
 
-      - name: Save image tag
-        run: echo $GITHUB_SHA > image.txt
+      - name: Save image tag artifact
+        run: echo ${GITHUB_SHA} > image.txt
 
       - uses: actions/upload-artifact@v4
         with:
