@@ -62,6 +62,10 @@ jobs:
             kubectl apply -f /home/${EC2_USER}/k8s/deployment.yaml
             kubectl apply -f /home/${EC2_USER}/k8s/service.yaml
 
+            kubectl get pods -n "${NAMESPACE}" -o wide
+            kubectl describe pods -n "${NAMESPACE}"
+            kubectl logs -n "${NAMESPACE}" -l app=webapp --tail=50 --ignore-errors
+
             # 4) Wait for rollout
             kubectl rollout status deploy/webapp --timeout=120s
             EOF
