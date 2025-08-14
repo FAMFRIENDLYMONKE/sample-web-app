@@ -11,7 +11,11 @@ jobs:
           name: Install dependencies
           command: |
             sudo apt-get update
-            sudo apt-get install -y awscli gettext kubectl
+            sudo apt-get install -y awscli gettext
+            curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.30.0/2024-06-05/bin/linux/amd64/kubectl
+            chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/
+            kubectl version --cli
 
       - run:
           name: Set environment variables
