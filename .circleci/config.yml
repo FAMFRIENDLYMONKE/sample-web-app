@@ -5,28 +5,56 @@ jobs:
       - image: cimg/base:stable
     steps:
       - checkout
-      - run:
-          name: Install kubectl & helm
-          command: |
-            sudo apt-get update && sudo apt-get install -y jq
-            curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
       - run:
-          name: Update image in K8s manifest
+          name: Prepare SSH key
           command: |
-            IMAGE=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:${CIRCLE_SHA1}
-            sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:\${IMAGE_TAG}#${IMAGE}#g" k8s/deployment.yaml
+            mkdir -p ~/.ssh
+            echo -e "Host *\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
 
       - run:
-          name: Apply manifests to k3s
+          name: Copy K8s manifests to EC2
           command: |
-            export KUBECONFIG=~/.kube/config
-            kubectl apply -f k8s/deployment.yaml
-            kubectl apply -f k8s/service.yaml
+            rsync -avz k8s/ ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/k8s/
+
+      - run:
+          name: Deploy on EC2 via SSH
+          command: |
+            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' <<'EOF'
+            set -euo pipefail
+
+            if ! command -v aws >/dev/null 2>&1; then
+              sudo yum install -y awscli
+            fi
+
+            NAMESPACE=default
+            SECRET_NAME=regcred
+            AWS_ACCOUNT_ID="<AWS_ACCOUNT_ID>"
+            AWS_REGION="<AWS_REGION>"
+            ECR_REPO="<ECR_REPO>"
+            IMAGE_TAG="<USE_CIRCLE_SHA1>"
+
+            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+            token=$(aws ecr get-login-password --region "${AWS_REGION}")
+
+            kubectl -n "${NAMESPACE}" delete secret "${SECRET_NAME}" --ignore-not-found
+            kubectl -n "${NAMESPACE}" create secret docker-registry "${SECRET_NAME}" \
+              --docker-server="${docker_server}" \
+              --docker-username=AWS \
+              --docker-password="${token}"
+
+            sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:\${IMAGE_TAG}#${docker_server}/${ECR_REPO}:${IMAGE_TAG}#g" /home/${USER}/k8s/deployment.yaml
+
+            kubectl apply -f /home/${USER}/k8s/deployment.yaml
+            kubectl apply -f /home/${USER}/k8s/service.yaml
+
+            kubectl rollout status deploy/webapp --timeout=120s
+            EOF
 
 workflows:
   deploy_on_main:
     jobs:
-      - deploy
+      - deploy:
+          filters:
+            branches:
+              only: main
