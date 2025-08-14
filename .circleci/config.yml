@@ -1,4 +1,5 @@
 version: 2.1
+
 jobs:
   deploy:
     docker:
@@ -6,6 +7,12 @@ jobs:
     steps:
       - checkout
 
+      - run:
+          name: Install rsync
+          command: |
+            sudo apt-get update -y
+            sudo apt-get install -y rsync
+            
       - run:
           name: Prepare SSH key
           command: |
@@ -20,36 +27,38 @@ jobs:
       - run:
           name: Deploy on EC2 via SSH
           command: |
-            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' <<'EOF'
+            ssh ${EC2_USER}@${EC2_HOST} 'bash -s' \<<EOF
             set -euo pipefail
+
+            AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+            AWS_REGION="${AWS_REGION}"
+            ECR_REPO="${ECR_REPO}"
+            IMAGE_TAG="${CIRCLE_SHA1}"
+
+            NAMESPACE=default
+            SECRET_NAME=regcred
+            docker_server="\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com"
 
             if ! command -v aws >/dev/null 2>&1; then
               sudo yum install -y awscli
             fi
 
-            NAMESPACE=default
-            SECRET_NAME=regcred
-            AWS_ACCOUNT_ID="<AWS_ACCOUNT_ID>"
-            AWS_REGION="<AWS_REGION>"
-            ECR_REPO="<ECR_REPO>"
-            IMAGE_TAG="<USE_CIRCLE_SHA1>"
-
-            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-            token=$(aws ecr get-login-password --region "${AWS_REGION}")
-
-            kubectl -n "${NAMESPACE}" delete secret "${SECRET_NAME}" --ignore-not-found
-            kubectl -n "${NAMESPACE}" create secret docker-registry "${SECRET_NAME}" \
-              --docker-server="${docker_server}" \
+            token=\$(aws ecr get-login-password --region "\${AWS_REGION}")
+            kubectl -n "\${NAMESPACE}" delete secret "\${SECRET_NAME}" --ignore-not-found
+            kubectl -n "\${NAMESPACE}" create secret docker-registry "\${SECRET_NAME}" \
+              --docker-server="\${docker_server}" \
               --docker-username=AWS \
-              --docker-password="${token}"
+              --docker-password="\${token}"
 
-            sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:\${IMAGE_TAG}#${docker_server}/${ECR_REPO}:${IMAGE_TAG}#g" /home/${USER}/k8s/deployment.yaml
+            sed -i "s#\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${ECR_REPO}:.*#\${docker_server}/\${ECR_REPO}:\${IMAGE_TAG}#g" /home/${EC2_USER}/k8s/deployment.yaml
 
-            kubectl apply -f /home/${USER}/k8s/deployment.yaml
-            kubectl apply -f /home/${USER}/k8s/service.yaml
+            kubectl apply -f /home/${EC2_USER}/k8s/deployment.yaml
+            kubectl apply -f /home/${EC2_USER}/k8s/service.yaml
 
+            # Rollout status
             kubectl rollout status deploy/webapp --timeout=120s
             EOF
+
 
 workflows:
   deploy_on_main:
