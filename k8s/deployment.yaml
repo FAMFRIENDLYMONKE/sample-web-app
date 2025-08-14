@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      containers:
+        - name: webapp
+          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<ECR_REPO>:${IMAGE_TAG}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: BUGSNAG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: webapp-secrets
+                  key: BUGSNAG_API_KEY
