@@ -25,6 +25,22 @@ jobs:
             rsync -avz k8s/ ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/k8s/
 
       - run:
+          name: Send env vars to EC2
+          command: |
+            echo "AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}" > envfile
+            echo "AWS_REGION=${AWS_REGION}" >> envfile
+            echo "ECR_REPO=${ECR_REPO}" >> envfile
+            echo "CIRCLE_SHA1=${CIRCLE_SHA1}" >> envfile
+            scp envfile ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/envfile
+
+      - run:
+          name: Deploy
+          command: |
+            ssh ${EC2_USER}@${EC2_HOST} 'source ~/envfile && bash -s' <<'EOF'
+            # same deployment script as before
+            EOF
+
+      - run:
           name: Deploy on EC2 via SSH
           command: |
             ssh ${EC2_USER}@${EC2_HOST} 'bash -s' \<<'EOF'
