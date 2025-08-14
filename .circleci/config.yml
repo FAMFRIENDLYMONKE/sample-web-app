@@ -58,6 +58,8 @@ jobs:
             sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:.*#${docker_server}/${ECR_REPO}:${IMAGE_TAG}#g" \
               /home/${EC2_USER}/k8s/deployment.yaml
 
+            envsubst < k8s/deployment.yaml | kubectl apply -f -
+  
             # 3) Apply manifests
             kubectl apply -f /home/${EC2_USER}/k8s/deployment.yaml
             kubectl apply -f /home/${EC2_USER}/k8s/service.yaml
