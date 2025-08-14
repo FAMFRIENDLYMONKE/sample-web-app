@@ -1,0 +1,32 @@
+version: 2.1
+jobs:
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - run:
+          name: Install kubectl & helm
+          command: |
+            sudo apt-get update && sudo apt-get install -y jq
+            curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - run:
+          name: Update image in K8s manifest
+          command: |
+            IMAGE=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:${CIRCLE_SHA1}
+            sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:\${IMAGE_TAG}#${IMAGE}#g" k8s/deployment.yaml
+
+      - run:
+          name: Apply manifests to k3s
+          command: |
+            export KUBECONFIG=~/.kube/config
+            kubectl apply -f k8s/deployment.yaml
+            kubectl apply -f k8s/service.yaml
+
+workflows:
+  deploy_on_main:
+    jobs:
+      - deploy
