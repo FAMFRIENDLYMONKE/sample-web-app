@@ -15,47 +15,27 @@ jobs:
       - run:
           name: Deploy on EC2 via SSH (passing all env vars)
           command: |
-            ssh -tt -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \<< 'EOF'
-              set -euo pipefail
+            ssh -tt -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} \
+            "AWS_ACCOUNT_ID='${AWS_ACCOUNT_ID}' \
+            AWS_REGION='${AWS_REGION}' \
+            ECR_REPO='${ECR_REPO}' \
+            IMAGE_TAG='${IMAGE_TAG:-${CIRCLE_SHA1}}' \
+            EC2_USER='${EC2_USER}' \
+            bash -s" \<< 'EOF'
+            set -euo pipefail
 
-              # --- Pass CircleCI environment variables into the EC2 shell session ---
-              export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
-              export AWS_REGION="${AWS_REGION}"
-              export ECR_REPO="${ECR_REPO}"
-              export IMAGE_TAG="${IMAGE_TAG:-${CIRCLE_SHA1}}"
-              export KUBECONFIG="/home/${EC2_USER}/.kube/config"
+            docker_server="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-              echo "Using image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
+            echo "Using image: $docker_server/$ECR_REPO:$IMAGE_TAG"
 
-              # --- (Optional) AWS tools install if missing (EC2 IAM role provides credentials automatically) ---
-              if ! command -v aws &>/dev/null; then
-                sudo yum install -y awscli
-              fi
+            # (then the rest of your commands...)
+            sed -i \
+              "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:<IMAGE_TAG>#${docker_server}/${ECR_REPO}:${IMAGE_TAG}#g" \
+              /home/${EC2_USER}/k8s/deployment.yaml
 
-              if ! command -v kubectl &>/dev/null; then
-                echo "Installing kubectl..."
-                curl -Lo kubectl "https://amazon-eks.s3.us-west-2.amazonaws.com/1.29.0/2024-03-27/bin/linux/amd64/kubectl"
-                chmod +x kubectl
-                sudo mv kubectl /usr/local/bin/
-              fi
-
-              # Optional: log into ECR (uses instance role)
-              aws ecr get-login-password --region "${AWS_REGION}" \
-                | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-
-              # --- Replace Docker image line in manifest using env vars locally on EC2 ---
-              sed -i \
-                "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:<IMAGE_TAG>#${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}#g" \
-                /home/${EC2_USER}/k8s/deployment.yaml
-
-              # --- Deploy to Kubernetes ---
-              kubectl apply -f /home/${EC2_USER}/k8s/deployment.yaml
-              kubectl apply -f /home/${EC2_USER}/k8s/service.yaml
-
-              echo "Waiting for rollout..."
-              kubectl rollout status deployment/webapp --timeout=300s
-
-              echo "✅ Deployment completed"
+            kubectl apply -f /home/${EC2_USER}/k8s/deployment.yaml
+            kubectl apply -f /home/${EC2_USER}/k8s/service.yaml
+            kubectl rollout status deployment/webapp --timeout=300s
             EOF
 
 workflows:
