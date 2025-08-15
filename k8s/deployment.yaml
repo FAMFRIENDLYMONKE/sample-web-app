@@ -17,6 +17,16 @@ spec:
           image: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:<IMAGE_TAG>
           ports:
             - containerPort: 80
+          env:
+            - name: BUGSNAG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bugsnag-secret
+                  key: api-key
+            - name: NODE_ENV
+              value: "production"
+            - name: AWS_REGION
+              value: "<AWS_REGION>"
 ---
 apiVersion: v1
 kind: Service
@@ -29,4 +39,4 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-  type: LoadBalancer
+  type: NodePort
