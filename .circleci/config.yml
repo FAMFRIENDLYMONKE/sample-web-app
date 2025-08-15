@@ -16,17 +16,24 @@ jobs:
             ./get_helm.sh
 
       - run:
-          name: Update image in K8s manifest
+          name: Export environment variables on EC2 via SSH
           command: |
-            IMAGE=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:${CIRCLE_SHA1}
-            sed -i "s#<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/<ECR_REPO>:\${IMAGE_TAG}#${IMAGE}#g" k8s/deployment.yaml
-
-      - run:
-          name: Apply manifests to k3s
-          command: |
-            export KUBECONFIG=~/.kube/config
-            kubectl apply -f k8s/deployment.yaml
-            kubectl apply -f k8s/service.yaml
+            ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+              export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+              export AWS_REGION="${AWS_REGION}"
+              export ECR_REPO="${ECR_REPO}"
+              export IMAGE_TAG="${CIRCLE_SHA1}"
+              export KUBECONFIG="/home/${EC2_USER}/.kube/config"
+              echo "Environment variables exported on EC2:"
+              echo "  AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
+              echo "  AWS_REGION=$AWS_REGION"
+              echo "  ECR_REPO=$ECR_REPO"
+              echo "  IMAGE_TAG=$IMAGE_TAG"
+              export KUBECONFIG=~/.kube/config
+              kubectl apply -f k8s/deployment.yaml
+              kubectl apply -f k8s/service.yaml
+            EOF
+            
 
 workflows:
   deploy_on_main:
